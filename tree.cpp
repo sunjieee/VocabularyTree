@@ -8,6 +8,8 @@ using namespace std;
 
 const int N=100000;
 const int L=3;
+const int K=10;					//kmeans的K
+
 
 unsigned char **feature=new unsigned char *[N];			//保存特征向量
 //unsigned char **query=new unsigned char *[1000];
@@ -16,14 +18,14 @@ int *layer= new int [L];		//保存树每层的开始点
 //int *star=new int [2*N];
 //int *Wi=new int [2*N];
 int NN;							//节点序号
-int k;							//kmeans的k
 //int Query;
 //int Imag;
 struct TreeNode					//树节点
 {
     float center[128];
     float summ[128];
-    int son[100];
+    int son[K];
+    int ran;
     int numm;
     int kk;
 }tree[2*N];
@@ -52,18 +54,32 @@ void final(int a,unsigned char **T)
 	}
 	delete[] T;
 }
-bool cmp(Sor s1,Sor s2)
+void initial()
+{
+	srand((int)time(0));
+	layer[0]=0;
+	layer[1]=1;
+	tree[0].numm=N;
+	tree[0].kk=0;
+	NN=0;
+	for(int i=0;i<N;i++)
+	{
+		sor[i].node=0;
+	}
+	memset(nodeson,0,sizeof(nodeson));
+}
+/*bool cmp(Sor s1,Sor s2)
 {
 	return s1.node<s2.node;
 }
-/*bool cmp2(Base b1,Base b2)
+bool cmp2(Base b1,Base b2)
 {
 	return b1.ba<b2.ba;
 }*/
 void file_intput()
 {
 	ifstream in("SampleDSift_100K", ios::in|ios::binary);
-	for(int i=0;i<N;i++)
+	for(int i=0;i<N;i++)			
 	{
 		in.read((char*)feature[i],sizeof(unsigned char)*128);
 	}
@@ -73,7 +89,7 @@ int find_closest(int s,int xx,unsigned char **T)				//找最近的子节点
 {
 	int num;
 	float minsum;
-	for(int i=0;i<k;i++)
+	for(int i=0;i<K;i++)
 	{
 		float sum=0;
 		for(int j=0;j<128;j++)
@@ -94,40 +110,69 @@ int find_closest(int s,int xx,unsigned char **T)				//找最近的子节点
 			minsum=sum;
 			num=i;
 		}
-
 	}
-	return tree[sor[xx].node].son[num];
+	return tree[xx].son[num];
 }
-void build_tree(int l)
+void find_init_central(int l)
 {
-	cout<<l<<endl; //test
-	if(l==L)
+	for(int i=layer[l];i<layer[l+1];i++)   
 	{
-		return;
-	}
-	for(int i=layer[l];i<layer[l+1];i++)   //分配子节点
-	{
-		if(tree[i].numm>=k)
+		if(tree[i].numm>=K)
 		{
-			for(int j=0;j<k;j++)
+			for(int j=0;j<K;j++)
 			{
-				tree[i].son[j]=++NN;
+				tree[i].son[j]=++NN;				//分配子节点
 				tree[tree[i].son[j]].kk=0;
+				int ww;
+				int aa=1;
+				while(aa)							//random
+				{
+					aa=0;
+					ww=rand()%tree[i].numm+1;
+					for(int k=0;k<j;k++)
+					{
+						if(ww==tree[tree[i].son[k]].ran)
+						{
+							aa=1;
+						}
+					}
+				}
+				tree[tree[i].son[j]].ran=ww; 
 			}
 		}
 	}
 	layer[l+2]=NN+1;
-	for(int i=0;i<N;i++)	//k个son的初始中心
+	for(int i=0;i<N;i++)							//K个son的初始中心
 	{
-		if(tree[sor[i].node].numm>=k&&tree[sor[i].node].kk<k)
+		if(tree[sor[i].node].numm>=K)
 		{
 			tree[sor[i].node].kk++;
-			for(int j=0;j<128;j++)
+			int ww=-1;
+			for(int j=0;j<K;j++)
 			{
-				tree[tree[sor[i].node].son[tree[sor[i].node].kk]].center[j]=(float)feature[i][j];
+				if(tree[tree[sor[i].node].son[j]].ran==tree[sor[i].node].kk)
+				{
+					ww=j;
+					break;
+				}
+			}
+			if(ww>=0)
+			{
+				for(int j=0;j<128;j++)
+				{
+					tree[tree[sor[i].node].son[ww]].center[j]=(float)feature[i][j];
+				}
 			}
 		}
 	}
+}
+void build_tree(int l)
+{
+	if(l==L)
+	{
+		return;
+	}
+	find_init_central(l);
 	int ff=1;
 	int stop=1;
 	while(ff)
@@ -137,7 +182,6 @@ void build_tree(int l)
 			break;
 		}
 		stop++;
-		cout<<stop<<endl;
 		ff=0;
 		for(int i=layer[l+1];i<layer[l+2];i++)			//初始化numm，summm
 		{
@@ -149,7 +193,7 @@ void build_tree(int l)
 		}
 		for(int i=0;i<N;i++)					//判断和那个son中心近
 		{
-			if(tree[sor[i].node].numm>=k)
+			if(tree[sor[i].node].numm>=K)
 			{
 
 				int p=find_closest(i,sor[i].node,feature);
@@ -172,6 +216,18 @@ void build_tree(int l)
 				tree[i].center[j]=tree[i].summ[j]/tree[i].numm;
 			}
 		}
+		float just_test=0.0;			//test
+		for(int i=0;i<N;i++)
+		{
+			float s12=0.0;
+			for(int j=0;j<128;j++)
+			{
+				float sss=feature[i][j]-tree[nodeson[i]].center[j];
+				s12+=sss*sss;
+			}
+			just_test+=sqrt(s12);
+		}
+		cout<<just_test<<endl;
 	}
 	for(int i=0;i<N;i++)			//到son节点
 	{
@@ -199,7 +255,7 @@ void build_tree(int l)
 }
 int find_left(int s,int now,int lay)
 {
-	if(lay==L||tree[now].numm<k)
+	if(lay==L||tree[now].numm<K)
 	{
 		return now;
 	}
@@ -236,31 +292,10 @@ int main()
 	for(int i=0;i<N;i++)
 	{
 		scanf("%d",&sor[i].whichimage);
-	}
-	for(int i=0;i<N;i++)
-	{
-		for(int j=0;j<128;j++)
-		{
-			scanf("%f",&feature[i][j]);
-		}
 	}*/
-	layer[0]=0;
-	layer[1]=1;
-	tree[0].numm=N;
-	NN=0;
-	k=10;
-	for(int i=0;i<N;i++)
-	{
-		sor[i].node=0;
-	}
-	memset(nodeson,0,sizeof(nodeson));
-	//cout<<000;
+	initial();
 	build_tree(0);
-	cout<<NN<<endl;
-	for(int i=0;i<=L+1;i++)			//output_test
-	{
-		cout<<layer[i]<<" ";
-	}
+	cout<<NN<<endl;					//test
 	//nex_tstep();
 	/*scanf("%d",&Query);
 	for(int i=0;i<Query;i++)
